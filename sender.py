@@ -21,7 +21,7 @@ app = FastAPI()
 SAMPLE_RATE = 48000
 CHANNELS = 2
 
-# 40 ms of audio per packet
+# 40 ms per packet
 BLOCK_SIZE = 1920
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -33,6 +33,9 @@ RECEIVER_FILE = BASE_DIR / "receiver" / "index.html"
 # ============================================================
 
 clients = set()
+
+# WebSocket -> device information
+devices = {}
 
 audio_queue = None
 
@@ -46,10 +49,6 @@ stop_capture = threading.Event()
 # ============================================================
 
 def get_loopback_microphone():
-    """
-    Get the Windows WASAPI loopback device
-    corresponding to the default speaker.
-    """
 
     speaker = sc.default_speaker()
 
@@ -58,9 +57,7 @@ def get_loopback_microphone():
             "No default speaker found."
         )
 
-    print(
-        f"Using speaker: {speaker.name}"
-    )
+    print(f"Using speaker: {speaker.name}")
 
     microphone = sc.get_microphone(
         id=str(speaker.id),
@@ -80,21 +77,12 @@ def get_loopback_microphone():
 # ============================================================
 
 def capture_audio(loop):
-    """
-    Capture Windows system audio in a dedicated thread.
-
-    Running capture separately from asyncio prevents
-    network activity from interfering with the audio
-    capture loop.
-    """
 
     try:
 
         microphone = get_loopback_microphone()
 
-        print(
-            "Starting system audio capture..."
-        )
+        print("Starting system audio capture...")
 
         with microphone.recorder(
             samplerate=SAMPLE_RATE,
@@ -108,23 +96,18 @@ def capture_audio(loop):
                     numframes=BLOCK_SIZE
                 )
 
-                # Keep samples inside [-1, 1].
                 audio = np.clip(
                     audio,
                     -1.0,
                     1.0
                 )
 
-                # Convert float audio to
-                # signed 16-bit PCM.
                 pcm = (
                     audio * 32767
                 ).astype(np.int16)
 
                 data = pcm.tobytes()
 
-                # Safely pass the audio packet
-                # from the capture thread to asyncio.
                 try:
 
                     asyncio.run_coroutine_threadsafe(
@@ -147,12 +130,6 @@ def capture_audio(loop):
 # ============================================================
 
 async def put_audio(data: bytes):
-    """
-    Put captured audio into the asyncio queue.
-
-    If the queue becomes full, discard the oldest
-    packet to prevent latency from continuously growing.
-    """
 
     if audio_queue is None:
         return
@@ -161,7 +138,6 @@ async def put_audio(data: bytes):
 
         try:
             audio_queue.get_nowait()
-
         except asyncio.QueueEmpty:
             pass
 
@@ -178,10 +154,6 @@ async def put_audio(data: bytes):
 # ============================================================
 
 async def broadcast_audio():
-    """
-    Take audio packets from the queue and send them
-    to every connected phone.
-    """
 
     while True:
 
@@ -196,27 +168,24 @@ async def broadcast_audio():
 
             try:
 
-                await client.send_bytes(
-                    data
-                )
+                await client.send_bytes(data)
 
             except Exception:
 
                 dead_clients.add(client)
 
-        clients.difference_update(
-            dead_clients
-        )
+        for client in dead_clients:
+
+            clients.discard(client)
+            devices.pop(client, None)
 
 
 # ============================================================
-# WebSocket endpoint
+# WebSocket
 # ============================================================
 
 @app.websocket("/audio")
-async def audio_socket(
-    websocket: WebSocket
-):
+async def audio_socket(websocket: WebSocket):
 
     await websocket.accept()
 
@@ -225,20 +194,72 @@ async def audio_socket(
     address = websocket.client
 
     print(
-        f"Phone connected: {address}"
+        f"Device connected: {address}"
     )
 
     try:
 
         while True:
 
-            # We don't require any messages
-            # from the phone.
-            #
-            # This simply waits until the
-            # WebSocket disconnects.
+            message = await websocket.receive()
 
-            await websocket.receive()
+            # Device identification message
+            if message.get("text"):
+
+                try:
+
+                    import json
+
+                    data = json.loads(
+                        message["text"]
+                    )
+
+                    if data.get("type") == "identify":
+
+                        devices[websocket] = {
+                            "name": data.get(
+                                "name",
+                                "Unknown Device"
+                            ),
+                            "platform": data.get(
+                                "platform",
+                                "Unknown"
+                            ),
+                            "browser": data.get(
+                                "browser",
+                                "Unknown"
+                            ),
+                            "ip": address.host
+                            if address else "Unknown"
+                        }
+
+                        print(
+                            f"  Name     : "
+                            f"{devices[websocket]['name']}"
+                        )
+
+                        print(
+                            f"  Platform : "
+                            f"{devices[websocket]['platform']}"
+                        )
+
+                        print(
+                            f"  Browser  : "
+                            f"{devices[websocket]['browser']}"
+                        )
+
+                        print(
+                            f"  IP       : "
+                            f"{devices[websocket]['ip']}"
+                        )
+
+                        print()
+
+                except Exception as e:
+
+                    print(
+                        f"Device identification error: {e}"
+                    )
 
     except Exception:
         pass
@@ -247,9 +268,23 @@ async def audio_socket(
 
         clients.discard(websocket)
 
-        print(
-            f"Phone disconnected: {address}"
+        device = devices.pop(
+            websocket,
+            None
         )
+
+        if device:
+
+            print(
+                f"Device disconnected: "
+                f"{device['name']}"
+            )
+
+        else:
+
+            print(
+                f"Device disconnected: {address}"
+            )
 
 
 # ============================================================
@@ -273,6 +308,25 @@ async def index():
 
 
 # ============================================================
+# Device list
+# ============================================================
+
+@app.get("/devices")
+async def get_devices():
+
+    result = []
+
+    for device in devices.values():
+
+        result.append(device)
+
+    return {
+        "count": len(result),
+        "devices": result
+    }
+
+
+# ============================================================
 # Server status
 # ============================================================
 
@@ -283,6 +337,9 @@ async def status():
         "name": "Wi-Fi Speaker",
         "status": "running",
         "connected_devices": len(clients),
+        "devices": list(
+            devices.values()
+        ),
         "audio": {
             "sample_rate": SAMPLE_RATE,
             "channels": CHANNELS,
@@ -307,22 +364,16 @@ async def startup():
         "Initializing audio system..."
     )
 
-    # Queue holds a small amount of audio.
-    #
-    # 20 × 40 ms = 800 ms maximum buffering.
     audio_queue = asyncio.Queue(
         maxsize=20
     )
 
-    # Start broadcaster.
     asyncio.create_task(
         broadcast_audio()
     )
 
-    # Get the currently running asyncio loop.
     loop = asyncio.get_running_loop()
 
-    # Start capture in a separate thread.
     capture_thread = threading.Thread(
         target=capture_audio,
         args=(loop,),

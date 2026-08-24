@@ -44,6 +44,11 @@
             margin-top: 0;
         }
 
+        #device {
+            color: #aaa;
+            margin-bottom: 20px;
+        }
+
         #status {
             margin: 20px 0;
             color: #aaa;
@@ -63,10 +68,6 @@
             font-weight: bold;
 
             cursor: pointer;
-        }
-
-        button:active {
-            transform: scale(0.98);
         }
 
         #buffer {
@@ -90,6 +91,10 @@
 
     <h1>Wi-Fi Speaker</h1>
 
+    <div id="device">
+        Detecting device...
+    </div>
+
     <div id="status">
         Disconnected
     </div>
@@ -112,24 +117,9 @@
 const SAMPLE_RATE = 48000;
 const CHANNELS = 2;
 
-
-/*
- * Initial buffer before playback begins.
- */
 const INITIAL_BUFFER_MS = 200;
-
-
-/*
- * Maximum browser-side buffer.
- */
 const MAX_BUFFER_MS = 600;
 
-
-/*
- * ---------------------------------------------------------
- * State
- * ---------------------------------------------------------
- */
 
 let socket = null;
 
@@ -148,12 +138,6 @@ let queuedFrames = 0;
 let started = false;
 
 
-/*
- * ---------------------------------------------------------
- * UI
- * ---------------------------------------------------------
- */
-
 const status =
     document.getElementById("status");
 
@@ -166,26 +150,102 @@ const bufferDisplay =
 const errorDisplay =
     document.getElementById("error");
 
+const deviceDisplay =
+    document.getElementById("device");
+
 
 /*
- * ---------------------------------------------------------
- * Show errors
- * ---------------------------------------------------------
+ * ==========================================================
+ * Device detection
+ * ==========================================================
  */
 
-function showError(message) {
+function detectDevice() {
 
-    console.error(message);
+    const ua =
+        navigator.userAgent;
 
-    errorDisplay.textContent =
-        message;
+
+    let platform = "Unknown Device";
+    let browser = "Unknown Browser";
+
+
+    /*
+     * Platform
+     */
+
+    if (/Android/i.test(ua)) {
+
+        platform = "Android";
+
+    } else if (/iPhone|iPad|iPod/i.test(ua)) {
+
+        platform = "iOS";
+
+    } else if (/Windows/i.test(ua)) {
+
+        platform = "Windows";
+
+    } else if (/Macintosh/i.test(ua)) {
+
+        platform = "macOS";
+
+    } else if (/Linux/i.test(ua)) {
+
+        platform = "Linux";
+    }
+
+
+    /*
+     * Browser
+     */
+
+    if (/Edg/i.test(ua)) {
+
+        browser = "Edge";
+
+    } else if (/Chrome/i.test(ua)) {
+
+        browser = "Chrome";
+
+    } else if (/Firefox/i.test(ua)) {
+
+        browser = "Firefox";
+
+    } else if (/Safari/i.test(ua)) {
+
+        browser = "Safari";
+    }
+
+
+    /*
+     * Friendly name
+     */
+
+    const name =
+        `${platform} • ${browser}`;
+
+
+    deviceDisplay.textContent =
+        `📱 ${name}`;
+
+
+    return {
+        name,
+        platform,
+        browser
+    };
 }
 
 
+const deviceInfo =
+    detectDevice();
+
+
 /*
- * ---------------------------------------------------------
+ * ==========================================================
  * Connect
- * ---------------------------------------------------------
+ * ==========================================================
  */
 
 button.addEventListener(
@@ -194,10 +254,6 @@ button.addEventListener(
 
         errorDisplay.textContent = "";
 
-
-        /*
-         * Disconnect if already connected.
-         */
 
         if (
             socket &&
@@ -213,11 +269,6 @@ button.addEventListener(
 
         try {
 
-            /*
-             * Create audio context after
-             * user interaction.
-             */
-
             audioContext =
                 new (
                     window.AudioContext ||
@@ -230,20 +281,8 @@ button.addEventListener(
             await audioContext.resume();
 
 
-            console.log(
-                "Audio context:",
-                audioContext.sampleRate
-            );
-
-
             /*
-             * -------------------------------------------------
-             * ScriptProcessor
-             * -------------------------------------------------
-             *
-             * 4096 frames gives the browser enough
-             * breathing room while keeping latency
-             * reasonably low.
+             * Continuous audio processor.
              */
 
             processor =
@@ -264,12 +303,23 @@ button.addEventListener(
 
 
             /*
-             * IMPORTANT:
-             * Change this to your laptop IP.
+             * =================================================
+             * AUTOMATIC IP DETECTION
+             * =================================================
+             *
+             * Since the phone loaded this page from:
+             *
+             * http://192.168.1.7:8000
+             *
+             * location.hostname is automatically:
+             *
+             * 192.168.1.7
+             *
+             * No hardcoded IP anymore.
              */
 
             const laptopIP =
-                "192.168.43.131";
+                location.hostname;
 
 
             const websocketURL =
@@ -293,9 +343,9 @@ button.addEventListener(
 
 
             /*
-             * -------------------------------------------------
-             * WebSocket connected
-             * -------------------------------------------------
+             * =================================================
+             * Connected
+             * =================================================
              */
 
             socket.onopen = () => {
@@ -304,11 +354,34 @@ button.addEventListener(
                     "WebSocket connected"
                 );
 
+
                 status.textContent =
                     "Connected 🔊";
 
+
                 button.textContent =
                     "Disconnect";
+
+
+                /*
+                 * Tell Python who we are.
+                 */
+
+                socket.send(
+                    JSON.stringify({
+                        type: "identify",
+
+                        name:
+                            deviceInfo.name,
+
+                        platform:
+                            deviceInfo.platform,
+
+                        browser:
+                            deviceInfo.browser
+                    })
+                );
+
 
                 audioQueue = [];
 
@@ -320,14 +393,15 @@ button.addEventListener(
 
                 started = false;
 
+
                 updateBufferDisplay();
             };
 
 
             /*
-             * -------------------------------------------------
-             * Audio packet received
-             * -------------------------------------------------
+             * =================================================
+             * Receive audio
+             * =================================================
              */
 
             socket.onmessage = (event) => {
@@ -354,10 +428,6 @@ button.addEventListener(
                     );
 
 
-                /*
-                 * Int16 → Float32
-                 */
-
                 for (
                     let i = 0;
                     i < frameCount;
@@ -373,23 +443,15 @@ button.addEventListener(
                 }
 
 
-                /*
-                 * Add packet to queue.
-                 */
-
                 audioQueue.push({
-                    left: left,
-                    right: right
+                    left,
+                    right
                 });
 
 
                 queuedFrames +=
                     frameCount;
 
-
-                /*
-                 * Prevent unlimited latency.
-                 */
 
                 const maximumFrames =
                     SAMPLE_RATE *
@@ -416,13 +478,6 @@ button.addEventListener(
                 }
 
 
-                /*
-                 * Don't start immediately.
-                 *
-                 * Wait until the buffer contains
-                 * enough audio.
-                 */
-
                 if (
                     !started &&
                     queuedFrames >=
@@ -444,44 +499,37 @@ button.addEventListener(
 
 
             /*
-             * -------------------------------------------------
-             * WebSocket error
-             * -------------------------------------------------
+             * =================================================
+             * Error
+             * =================================================
              */
 
-            socket.onerror = (event) => {
-
-                console.error(
-                    "WebSocket error:",
-                    event
-                );
+            socket.onerror = () => {
 
                 status.textContent =
                     "Connection error";
 
-                showError(
-                    "Could not connect to laptop."
-                );
+
+                errorDisplay.textContent =
+                    "Could not connect to laptop.";
             };
 
 
             /*
-             * -------------------------------------------------
-             * WebSocket closed
-             * -------------------------------------------------
+             * =================================================
+             * Closed
+             * =================================================
              */
 
             socket.onclose = () => {
 
-                console.log(
-                    "WebSocket closed"
-                );
-
                 status.textContent =
                     "Disconnected";
 
+
                 button.textContent =
                     "Connect";
+
 
                 audioQueue = [];
 
@@ -493,6 +541,7 @@ button.addEventListener(
 
                 started = false;
 
+
                 updateBufferDisplay();
             };
 
@@ -503,23 +552,19 @@ button.addEventListener(
             status.textContent =
                 "Audio initialization failed";
 
-            showError(
-                error.message ||
-                String(error)
-            );
-        }
 
+            errorDisplay.textContent =
+                error.message ||
+                String(error);
+        }
     }
 );
 
 
 /*
- * ---------------------------------------------------------
- * Audio processing callback
- * ---------------------------------------------------------
- *
- * This function is called continuously by
- * the browser's audio engine.
+ * ==========================================================
+ * Audio processing
+ * ==========================================================
  */
 
 function processAudio(event) {
@@ -538,20 +583,11 @@ function processAudio(event) {
             : null;
 
 
-    /*
-     * Fill the entire output buffer.
-     */
-
     for (
         let i = 0;
         i < leftOutput.length;
         i++
     ) {
-
-        /*
-         * If playback hasn't started,
-         * output silence.
-         */
 
         if (!started) {
 
@@ -564,11 +600,6 @@ function processAudio(event) {
             continue;
         }
 
-
-        /*
-         * Get a new packet when the
-         * current packet is exhausted.
-         */
 
         if (
             currentPacket === null ||
@@ -587,13 +618,6 @@ function processAudio(event) {
 
             } else {
 
-                /*
-                 * Buffer underrun.
-                 *
-                 * Output silence rather than
-                 * producing random samples.
-                 */
-
                 leftOutput[i] = 0;
 
                 if (rightOutput) {
@@ -605,19 +629,11 @@ function processAudio(event) {
         }
 
 
-        /*
-         * Output left channel.
-         */
-
         leftOutput[i] =
             currentPacket.left[
                 currentPosition
             ];
 
-
-        /*
-         * Output right channel.
-         */
 
         if (rightOutput) {
 
@@ -631,7 +647,6 @@ function processAudio(event) {
         currentPosition++;
 
         queuedFrames--;
-
     }
 
 
@@ -640,9 +655,9 @@ function processAudio(event) {
 
 
 /*
- * ---------------------------------------------------------
+ * ==========================================================
  * Buffer display
- * ---------------------------------------------------------
+ * ==========================================================
  */
 
 function updateBufferDisplay() {
