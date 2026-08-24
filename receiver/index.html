@@ -2,6 +2,7 @@
 <html lang="en">
 
 <head>
+
     <meta charset="UTF-8">
 
     <meta
@@ -11,115 +12,281 @@
 
     <title>Wi-Fi Speaker</title>
 
+
     <style>
+
         * {
             box-sizing: border-box;
         }
 
+
         body {
+
             margin: 0;
+
             min-height: 100vh;
 
             display: flex;
+
             align-items: center;
+
             justify-content: center;
 
             background: #111;
+
             color: white;
 
             font-family: Arial, sans-serif;
+
         }
 
+
         .container {
+
             width: min(90%, 420px);
+
             padding: 30px;
 
             text-align: center;
 
             background: #1c1c1c;
+
             border-radius: 20px;
+
         }
+
 
         h1 {
+
             margin-top: 0;
+
         }
+
 
         #device {
+
             color: #aaa;
+
             margin-bottom: 20px;
+
         }
+
 
         #status {
+
             margin: 20px 0;
+
             color: #aaa;
+
         }
 
-        button {
+
+        input {
+
             width: 100%;
-            padding: 15px;
+
+            padding: 14px;
+
+            margin-bottom: 10px;
 
             border: none;
+
+            border-radius: 10px;
+
+            background: #292929;
+
+            color: white;
+
+            font-size: 16px;
+
+            outline: none;
+
+        }
+
+
+        input:focus {
+
+            outline: 2px solid #555;
+
+        }
+
+
+        button {
+
+            width: 100%;
+
+            padding: 15px;
+
+            margin-top: 8px;
+
+            border: none;
+
             border-radius: 12px;
 
             background: white;
+
             color: #111;
 
             font-size: 16px;
+
             font-weight: bold;
 
             cursor: pointer;
+
         }
+
+
+        button:active {
+
+            transform: scale(0.98);
+
+        }
+
+
+        #connectButton {
+
+            margin-top: 20px;
+
+        }
+
+
+        #renameButton {
+
+            background: #292929;
+
+            color: white;
+
+        }
+
 
         #buffer {
+
             margin-top: 15px;
+
             color: #888;
+
             font-size: 14px;
+
         }
 
+
         #error {
+
             margin-top: 15px;
+
             color: #ff7777;
+
             font-size: 13px;
+
             word-break: break-word;
+
         }
+
+
+        #nameEditor {
+
+            display: none;
+
+        }
+
+
+        .hidden {
+
+            display: none !important;
+
+        }
+
     </style>
+
 </head>
+
 
 <body>
 
+
 <div class="container">
 
-    <h1>Wi-Fi Speaker</h1>
+
+    <h1>
+        Wi-Fi Speaker
+    </h1>
+
+
+    <!-- Current speaker name -->
 
     <div id="device">
         Detecting device...
     </div>
 
+
+    <!-- Rename panel -->
+
+    <div id="nameEditor">
+
+        <input
+            id="nameInput"
+            type="text"
+            maxlength="32"
+            placeholder="Speaker name"
+            autocomplete="off"
+        >
+
+        <button id="saveNameButton">
+            Save Name
+        </button>
+
+    </div>
+
+
+    <button id="renameButton">
+        Rename Speaker
+    </button>
+
+
     <div id="status">
         Disconnected
     </div>
+
 
     <button id="connectButton">
         Connect
     </button>
 
+
     <div id="buffer">
         Buffer: 0 ms
     </div>
 
+
     <div id="error"></div>
+
 
 </div>
 
 
 <script>
 
+
+/*
+ * ==========================================================
+ * Configuration
+ * ==========================================================
+ */
+
 const SAMPLE_RATE = 48000;
+
 const CHANNELS = 2;
 
 const INITIAL_BUFFER_MS = 200;
+
 const MAX_BUFFER_MS = 600;
 
+
+/*
+ * ==========================================================
+ * State
+ * ==========================================================
+ */
 
 let socket = null;
 
@@ -138,20 +305,64 @@ let queuedFrames = 0;
 let started = false;
 
 
+/*
+ * ==========================================================
+ * UI
+ * ==========================================================
+ */
+
 const status =
-    document.getElementById("status");
+    document.getElementById(
+        "status"
+    );
+
 
 const button =
-    document.getElementById("connectButton");
+    document.getElementById(
+        "connectButton"
+    );
+
 
 const bufferDisplay =
-    document.getElementById("buffer");
+    document.getElementById(
+        "buffer"
+    );
+
 
 const errorDisplay =
-    document.getElementById("error");
+    document.getElementById(
+        "error"
+    );
+
 
 const deviceDisplay =
-    document.getElementById("device");
+    document.getElementById(
+        "device"
+    );
+
+
+const renameButton =
+    document.getElementById(
+        "renameButton"
+    );
+
+
+const nameEditor =
+    document.getElementById(
+        "nameEditor"
+    );
+
+
+const nameInput =
+    document.getElementById(
+        "nameInput"
+    );
+
+
+const saveNameButton =
+    document.getElementById(
+        "saveNameButton"
+    );
 
 
 /*
@@ -166,8 +377,12 @@ function detectDevice() {
         navigator.userAgent;
 
 
-    let platform = "Unknown Device";
-    let browser = "Unknown Browser";
+    let platform =
+        "Unknown Device";
+
+
+    let browser =
+        "Unknown Browser";
 
 
     /*
@@ -178,21 +393,32 @@ function detectDevice() {
 
         platform = "Android";
 
-    } else if (/iPhone|iPad|iPod/i.test(ua)) {
+    }
+
+    else if (
+        /iPhone|iPad|iPod/i.test(ua)
+    ) {
 
         platform = "iOS";
 
-    } else if (/Windows/i.test(ua)) {
+    }
+
+    else if (/Windows/i.test(ua)) {
 
         platform = "Windows";
 
-    } else if (/Macintosh/i.test(ua)) {
+    }
+
+    else if (/Macintosh/i.test(ua)) {
 
         platform = "macOS";
 
-    } else if (/Linux/i.test(ua)) {
+    }
+
+    else if (/Linux/i.test(ua)) {
 
         platform = "Linux";
+
     }
 
 
@@ -204,42 +430,242 @@ function detectDevice() {
 
         browser = "Edge";
 
-    } else if (/Chrome/i.test(ua)) {
+    }
+
+    else if (/Chrome/i.test(ua)) {
 
         browser = "Chrome";
 
-    } else if (/Firefox/i.test(ua)) {
+    }
+
+    else if (/Firefox/i.test(ua)) {
 
         browser = "Firefox";
 
-    } else if (/Safari/i.test(ua)) {
+    }
+
+    else if (/Safari/i.test(ua)) {
 
         browser = "Safari";
+
     }
 
 
-    /*
-     * Friendly name
-     */
-
-    const name =
-        `${platform} • ${browser}`;
-
-
-    deviceDisplay.textContent =
-        `📱 ${name}`;
-
-
     return {
-        name,
         platform,
         browser
     };
+
 }
 
 
 const deviceInfo =
     detectDevice();
+
+
+/*
+ * ==========================================================
+ * Persistent speaker name
+ * ==========================================================
+ */
+
+const STORAGE_KEY =
+    "wifiSpeakerName";
+
+
+function getSpeakerName() {
+
+    const savedName =
+        localStorage.getItem(
+            STORAGE_KEY
+        );
+
+
+    if (
+        savedName &&
+        savedName.trim().length > 0
+    ) {
+
+        return savedName.trim();
+
+    }
+
+
+    /*
+     * First-time default name.
+     */
+
+    return `${deviceInfo.platform} • ${deviceInfo.browser}`;
+
+}
+
+
+function setSpeakerName(name) {
+
+    name =
+        name.trim();
+
+
+    if (!name) {
+
+        name =
+            `${deviceInfo.platform} • ${deviceInfo.browser}`;
+
+    }
+
+
+    localStorage.setItem(
+        STORAGE_KEY,
+        name
+    );
+
+
+    updateDeviceDisplay();
+
+}
+
+
+function updateDeviceDisplay() {
+
+    const name =
+        getSpeakerName();
+
+
+    deviceDisplay.textContent =
+        `📱 ${name}`;
+
+}
+
+
+updateDeviceDisplay();
+
+
+/*
+ * ==========================================================
+ * Rename UI
+ * ==========================================================
+ */
+
+renameButton.addEventListener(
+    "click",
+    () => {
+
+        nameEditor.style.display =
+            "block";
+
+
+        nameInput.value =
+            getSpeakerName();
+
+
+        nameInput.focus();
+
+    }
+);
+
+
+saveNameButton.addEventListener(
+    "click",
+    () => {
+
+        const newName =
+            nameInput.value.trim();
+
+
+        if (!newName) {
+
+            nameInput.focus();
+
+            return;
+
+        }
+
+
+        setSpeakerName(
+            newName
+        );
+
+
+        nameEditor.style.display =
+            "none";
+
+
+        /*
+         * If we're already connected,
+         * immediately update the server.
+         */
+
+        if (
+            socket &&
+            socket.readyState ===
+                WebSocket.OPEN
+        ) {
+
+            sendIdentification();
+
+        }
+
+    }
+);
+
+
+/*
+ * Allow Enter to save.
+ */
+
+nameInput.addEventListener(
+    "keydown",
+    (event) => {
+
+        if (
+            event.key === "Enter"
+        ) {
+
+            saveNameButton.click();
+
+        }
+
+    }
+);
+
+
+/*
+ * ==========================================================
+ * Identification
+ * ==========================================================
+ */
+
+function sendIdentification() {
+
+    if (
+        !socket ||
+        socket.readyState !==
+            WebSocket.OPEN
+    ) {
+
+        return;
+
+    }
+
+
+    socket.send(
+        JSON.stringify({
+
+            type: "identify",
+
+            name:
+                getSpeakerName(),
+
+            platform:
+                deviceInfo.platform,
+
+            browser:
+                deviceInfo.browser
+
+        })
+    );
+
+}
 
 
 /*
@@ -252,8 +678,13 @@ button.addEventListener(
     "click",
     async () => {
 
-        errorDisplay.textContent = "";
+        errorDisplay.textContent =
+            "";
 
+
+        /*
+         * Disconnect
+         */
 
         if (
             socket &&
@@ -264,17 +695,26 @@ button.addEventListener(
             socket.close();
 
             return;
+
         }
 
 
         try {
+
+            /*
+             * Create audio context after
+             * user interaction.
+             */
 
             audioContext =
                 new (
                     window.AudioContext ||
                     window.webkitAudioContext
                 )({
-                    sampleRate: SAMPLE_RATE
+
+                    sampleRate:
+                        SAMPLE_RATE
+
                 });
 
 
@@ -304,18 +744,20 @@ button.addEventListener(
 
             /*
              * =================================================
-             * AUTOMATIC IP DETECTION
+             * Automatic IP detection
              * =================================================
              *
-             * Since the phone loaded this page from:
+             * The page was loaded from:
              *
              * http://192.168.1.7:8000
              *
-             * location.hostname is automatically:
+             * Therefore:
+             *
+             * location.hostname
+             *
+             * automatically gives:
              *
              * 192.168.1.7
-             *
-             * No hardcoded IP anymore.
              */
 
             const laptopIP =
@@ -343,9 +785,7 @@ button.addEventListener(
 
 
             /*
-             * =================================================
              * Connected
-             * =================================================
              */
 
             socket.onopen = () => {
@@ -364,23 +804,10 @@ button.addEventListener(
 
 
                 /*
-                 * Tell Python who we are.
+                 * Identify ourselves.
                  */
 
-                socket.send(
-                    JSON.stringify({
-                        type: "identify",
-
-                        name:
-                            deviceInfo.name,
-
-                        platform:
-                            deviceInfo.platform,
-
-                        browser:
-                            deviceInfo.browser
-                    })
-                );
+                sendIdentification();
 
 
                 audioQueue = [];
@@ -395,159 +822,196 @@ button.addEventListener(
 
 
                 updateBufferDisplay();
+
             };
 
 
             /*
-             * =================================================
              * Receive audio
-             * =================================================
              */
 
-            socket.onmessage = (event) => {
+            socket.onmessage =
+                (event) => {
 
-                const pcm =
-                    new Int16Array(
-                        event.data
-                    );
-
-
-                const frameCount =
-                    pcm.length / CHANNELS;
+                    const pcm =
+                        new Int16Array(
+                            event.data
+                        );
 
 
-                const left =
-                    new Float32Array(
-                        frameCount
-                    );
+                    const frameCount =
+                        pcm.length /
+                        CHANNELS;
 
 
-                const right =
-                    new Float32Array(
-                        frameCount
-                    );
+                    const left =
+                        new Float32Array(
+                            frameCount
+                        );
 
 
-                for (
-                    let i = 0;
-                    i < frameCount;
-                    i++
-                ) {
-
-                    left[i] =
-                        pcm[i * 2] / 32768;
+                    const right =
+                        new Float32Array(
+                            frameCount
+                        );
 
 
-                    right[i] =
-                        pcm[i * 2 + 1] / 32768;
-                }
+                    /*
+                     * Convert Int16 → Float32.
+                     */
+
+                    for (
+                        let i = 0;
+                        i < frameCount;
+                        i++
+                    ) {
+
+                        left[i] =
+                            pcm[
+                                i * 2
+                            ] / 32768;
 
 
-                audioQueue.push({
-                    left,
-                    right
-                });
+                        right[i] =
+                            pcm[
+                                i * 2 + 1
+                            ] / 32768;
 
-
-                queuedFrames +=
-                    frameCount;
-
-
-                const maximumFrames =
-                    SAMPLE_RATE *
-                    MAX_BUFFER_MS /
-                    1000;
-
-
-                while (
-                    queuedFrames >
-                    maximumFrames
-                ) {
-
-                    const removed =
-                        audioQueue.shift();
-
-
-                    if (!removed) {
-                        break;
                     }
 
 
-                    queuedFrames -=
-                        removed.left.length;
-                }
+                    /*
+                     * Add packet.
+                     */
+
+                    audioQueue.push({
+
+                        left,
+                        right
+
+                    });
 
 
-                if (
-                    !started &&
-                    queuedFrames >=
+                    queuedFrames +=
+                        frameCount;
+
+
+                    /*
+                     * Prevent unlimited latency.
+                     */
+
+                    const maximumFrames =
                         SAMPLE_RATE *
-                        INITIAL_BUFFER_MS /
-                        1000
-                ) {
-
-                    started = true;
-
-                    console.log(
-                        "Playback started"
-                    );
-                }
+                        MAX_BUFFER_MS /
+                        1000;
 
 
-                updateBufferDisplay();
-            };
+                    while (
+                        queuedFrames >
+                        maximumFrames
+                    ) {
+
+                        const removed =
+                            audioQueue.shift();
+
+
+                        if (!removed) {
+
+                            break;
+
+                        }
+
+
+                        queuedFrames -=
+                            removed.left.length;
+
+                    }
+
+
+                    /*
+                     * Start after buffer
+                     * reaches 200 ms.
+                     */
+
+                    if (
+                        !started &&
+                        queuedFrames >=
+                            SAMPLE_RATE *
+                            INITIAL_BUFFER_MS /
+                            1000
+                    ) {
+
+                        started = true;
+
+
+                        console.log(
+                            "Playback started"
+                        );
+
+                    }
+
+
+                    updateBufferDisplay();
+
+                };
 
 
             /*
-             * =================================================
-             * Error
-             * =================================================
+             * WebSocket error
              */
 
-            socket.onerror = () => {
+            socket.onerror =
+                () => {
 
-                status.textContent =
-                    "Connection error";
+                    status.textContent =
+                        "Connection error";
 
 
-                errorDisplay.textContent =
-                    "Could not connect to laptop.";
-            };
+                    errorDisplay.textContent =
+                        "Could not connect to laptop.";
+
+                };
 
 
             /*
-             * =================================================
-             * Closed
-             * =================================================
+             * WebSocket closed
              */
 
-            socket.onclose = () => {
+            socket.onclose =
+                () => {
 
-                status.textContent =
-                    "Disconnected";
-
-
-                button.textContent =
-                    "Connect";
+                    status.textContent =
+                        "Disconnected";
 
 
-                audioQueue = [];
-
-                currentPacket = null;
-
-                currentPosition = 0;
-
-                queuedFrames = 0;
-
-                started = false;
+                    button.textContent =
+                        "Connect";
 
 
-                updateBufferDisplay();
-            };
+                    audioQueue = [];
 
-        } catch (error) {
+                    currentPacket = null;
 
-            console.error(error);
+                    currentPosition = 0;
+
+                    queuedFrames = 0;
+
+                    started = false;
+
+
+                    updateBufferDisplay();
+
+                };
+
+
+        }
+
+        catch (error) {
+
+            console.error(
+                error
+            );
+
 
             status.textContent =
                 "Audio initialization failed";
@@ -556,7 +1020,9 @@ button.addEventListener(
             errorDisplay.textContent =
                 error.message ||
                 String(error);
+
         }
+
     }
 );
 
@@ -574,12 +1040,16 @@ function processAudio(event) {
 
 
     const leftOutput =
-        outputBuffer.getChannelData(0);
+        outputBuffer.getChannelData(
+            0
+        );
 
 
     const rightOutput =
         outputBuffer.numberOfChannels > 1
-            ? outputBuffer.getChannelData(1)
+            ? outputBuffer.getChannelData(
+                1
+            )
             : null;
 
 
@@ -589,17 +1059,30 @@ function processAudio(event) {
         i++
     ) {
 
+        /*
+         * Not started yet.
+         */
+
         if (!started) {
 
             leftOutput[i] = 0;
 
+
             if (rightOutput) {
+
                 rightOutput[i] = 0;
+
             }
 
+
             continue;
+
         }
 
+
+        /*
+         * Get next packet.
+         */
 
         if (
             currentPacket === null ||
@@ -614,20 +1097,40 @@ function processAudio(event) {
                 currentPacket =
                     audioQueue.shift();
 
-                currentPosition = 0;
 
-            } else {
+                currentPosition =
+                    0;
 
-                leftOutput[i] = 0;
+            }
+
+            else {
+
+                /*
+                 * Buffer underrun.
+                 */
+
+                leftOutput[i] =
+                    0;
+
 
                 if (rightOutput) {
-                    rightOutput[i] = 0;
+
+                    rightOutput[i] =
+                        0;
+
                 }
 
+
                 continue;
+
             }
+
         }
 
+
+        /*
+         * Left channel.
+         */
 
         leftOutput[i] =
             currentPacket.left[
@@ -635,22 +1138,30 @@ function processAudio(event) {
             ];
 
 
+        /*
+         * Right channel.
+         */
+
         if (rightOutput) {
 
             rightOutput[i] =
                 currentPacket.right[
                     currentPosition
                 ];
+
         }
 
 
         currentPosition++;
 
+
         queuedFrames--;
+
     }
 
 
     updateBufferDisplay();
+
 }
 
 
@@ -664,20 +1175,27 @@ function updateBufferDisplay() {
 
     const milliseconds =
         Math.max(
+
             0,
+
             Math.round(
+
                 queuedFrames /
                 SAMPLE_RATE *
                 1000
+
             )
+
         );
 
 
     bufferDisplay.textContent =
         `Buffer: ${milliseconds} ms`;
+
 }
 
 </script>
 
 </body>
+
 </html>
