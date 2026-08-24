@@ -35,15 +35,14 @@ RECEIVER_FILE = (
 CONTROL_FILE = (
     BASE_DIR / "control" / "index.html"
 )
+
+CONTROL_STYLE_FILE = (
+    BASE_DIR / "control" / "styles.css"
+)
 app.mount(
     "/receiver",
     StaticFiles(directory=BASE_DIR / "receiver"),
     name="receiver"
-)
-app.mount(
-    "/control/assets",
-    StaticFiles(directory=BASE_DIR / "control"),
-    name="control-assets"
 )
 
 # ============================================================
@@ -720,4 +719,13 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000
+    )
+
+
+@app.get("/control/styles.css")
+async def control_stylesheet():
+
+    return FileResponse(
+        CONTROL_STYLE_FILE,
+        media_type="text/css"
     )
