@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Wi-Fi Speaker Control</title>
+
+
+    <style>
+
+        * {
+            box-sizing: border-box;
+        }
+
+
+        body {
+
+            margin: 0;
+
+            min-height: 100vh;
+
+            background: #111;
+
+            color: white;
+
+            font-family:
+                Arial,
+                sans-serif;
+
+            padding: 30px;
+
+        }
+
+
+        .container {
+
+            max-width: 800px;
+
+            margin: auto;
+
+        }
+
+
+        h1 {
+
+            margin-bottom: 5px;
+
+        }
+
+
+        .subtitle {
+
+            color: #888;
+
+            margin-bottom: 30px;
+
+        }
+
+
+        .toolbar {
+
+            display: flex;
+
+            gap: 10px;
+
+            margin-bottom: 20px;
+
+        }
+
+
+        button {
+
+            border: none;
+
+            border-radius: 10px;
+
+            padding: 11px 16px;
+
+            background: #292929;
+
+            color: white;
+
+            cursor: pointer;
+
+        }
+
+
+        button:hover {
+
+            background: #353535;
+
+        }
+
+
+        .primary {
+
+            background: white;
+
+            color: black;
+
+        }
+
+
+        .speaker {
+
+            background: #1c1c1c;
+
+            border-radius: 16px;
+
+            padding: 20px;
+
+            margin-bottom: 12px;
+
+            display: flex;
+
+            align-items: center;
+
+            gap: 15px;
+
+        }
+
+
+        .speaker.off {
+
+            opacity: 0.5;
+
+        }
+
+
+        .checkbox {
+
+            width: 22px;
+
+            height: 22px;
+
+        }
+
+
+        .info {
+
+            flex: 1;
+
+        }
+
+
+        .name {
+
+            font-size: 18px;
+
+            font-weight: bold;
+
+        }
+
+
+        .meta {
+
+            color: #777;
+
+            font-size: 13px;
+
+            margin-top: 5px;
+
+        }
+
+
+        .volume {
+
+            width: 130px;
+
+        }
+
+
+        .volumeValue {
+
+            width: 45px;
+
+            text-align: right;
+
+            color: #888;
+
+        }
+
+
+        .empty {
+
+            padding: 50px;
+
+            text-align: center;
+
+            color: #666;
+
+            background: #1c1c1c;
+
+            border-radius: 16px;
+
+        }
+
+
+        #count {
+
+            color: #888;
+
+        }
+
+    </style>
+
+    <link rel="stylesheet" href="/control/assets/styles.css">
+
+</head>
+
+
+<body>
+
+
+<main class="container">
+
+<header>
+    <div>
+        <div class="brand-mark" aria-hidden="true">◒</div>
+
+        <p class="eyebrow">Workspace audio</p>
+
+
+    <h1>
+        🔊 Wi-Fi Speakers
+    </h1>
+
+
+    <div class="subtitle">
+
+        <span id="count">
+            0 speakers connected
+        </span>
+
+    </div>
+    </div>
+
+    <div class="connection-state">Live control link</div>
+
+</header>
+
+    <div class="toolbar">
+
+        <span class="eyebrow">Connected speakers</span>
+
+        <div class="toolbar-actions">
+
+        <button
+            class="primary"
+            onclick="selectAll()"
+        >
+            Select All
+        </button>
+
+
+        <button
+            onclick="deselectAll()"
+        >
+            Deselect All
+        </button>
+
+        </div>
+
+    </div>
+
+
+    <div id="speakers"></div>
+
+
+</main>
+
+
+<script>
+
+
+let controlSocket = null;
+
+
+/*
+ * ==========================================================
+ * Connect to control WebSocket
+ * ==========================================================
+ */
+
+function connectControl() {
+
+    const protocol =
+        location.protocol === "https:"
+            ? "wss:"
+            : "ws:";
+
+
+    controlSocket =
+        new WebSocket(
+            `${protocol}//${location.host}/control/ws`
+        );
+
+
+    controlSocket.onopen = () => {
+
+        console.log(
+            "Control socket connected"
+        );
+
+    };
+
+
+    controlSocket.onclose = () => {
+
+        console.log(
+            "Control socket disconnected"
+        );
+
+
+        /*
+         * Automatically reconnect.
+         */
+
+        setTimeout(
+            connectControl,
+            2000
+        );
+
+    };
+
+}
+
+
+connectControl();
+
+
+/*
+ * ==========================================================
+ * Send command
+ * ==========================================================
+ */
+
+function sendCommand(data) {
+
+    if (
+        !controlSocket ||
+        controlSocket.readyState !==
+            WebSocket.OPEN
+    ) {
+
+        return;
+
+    }
+
+
+    controlSocket.send(
+        JSON.stringify(data)
+    );
+
+}
+
+
+/*
+ * ==========================================================
+ * Select all
+ * ==========================================================
+ */
+
+function selectAll() {
+
+    sendCommand({
+        command:
+            "select_all"
+    });
+
+    loadDevices();
+
+}
+
+
+/*
+ * ==========================================================
+ * Deselect all
+ * ==========================================================
+ */
+
+function deselectAll() {
+
+    sendCommand({
+        command:
+            "deselect_all"
+    });
+
+    loadDevices();
+
+}
+
+
+/*
+ * ==========================================================
+ * Toggle speaker
+ * ==========================================================
+ */
+
+function toggleSpeaker(
+    id,
+    enabled
+) {
+
+    sendCommand({
+
+        command:
+            enabled
+                ? "select"
+                : "deselect",
+
+        index:
+            Number(id)
+
+    });
+
+
+    loadDevices();
+
+}
+
+
+/*
+ * ==========================================================
+ * Change volume
+ * ==========================================================
+ */
+
+function changeVolume(
+    id,
+    value
+) {
+
+    sendCommand({
+
+        command:
+            "volume",
+
+        index:
+            Number(id),
+
+        volume:
+            Number(value)
+
+    });
+
+
+    const label =
+        document.getElementById(
+            `volume-${id}`
+        );
+
+
+    if (label) {
+
+        label.textContent =
+            `${Math.round(
+                value * 100
+            )}%`;
+
+    }
+
+}
+
+
+/*
+ * ==========================================================
+ * Mute
+ * ==========================================================
+ */
+
+function muteSpeaker(id) {
+
+    sendCommand({
+
+        command:
+            "mute",
+
+        index:
+            Number(id)
+
+    });
+
+}
+
+
+/*
+ * ==========================================================
+ * Load devices
+ * ==========================================================
+ */
+
+async function loadDevices() {
+
+    try {
+
+        const response =
+            await fetch(
+                "/devices"
+            );
+
+
+        const data =
+            await response.json();
+
+
+        renderDevices(
+            data.devices
+        );
+
+    }
+
+    catch (error) {
+
+        console.error(
+            error
+        );
+
+    }
+
+}
+
+
+/*
+ * ==========================================================
+ * Render devices
+ * ==========================================================
+ */
+
+function renderDevices(
+    devices
+) {
+
+    const container =
+        document.getElementById(
+            "speakers"
+        );
+
+
+    const count =
+        document.getElementById(
+            "count"
+        );
+
+
+    count.textContent =
+        `${devices.length} speaker${
+            devices.length === 1
+                ? ""
+                : "s"
+        } connected`;
+
+
+    if (devices.length === 0) {
+
+        container.innerHTML = `
+
+            <div class="empty">
+
+                No speakers connected.
+
+                <br><br>
+
+                Open the receiver page
+                on a phone to connect it.
+
+            </div>
+
+        `;
+
+        return;
+
+    }
+
+
+    container.innerHTML = "";
+
+
+    for (
+        const device of devices
+    ) {
+
+        const speaker =
+            document.createElement(
+                "div"
+            );
+
+
+        speaker.className =
+            "speaker";
+
+
+        if (!device.selected) {
+
+            speaker.classList.add(
+                "off"
+            );
+
+        }
+
+
+        const checked =
+            device.selected
+                ? "checked"
+                : "";
+
+
+        const volume =
+            device.volume ??
+            1;
+
+
+        speaker.innerHTML = `
+
+            <input
+                class="checkbox"
+                type="checkbox"
+                ${checked}
+                onchange="
+                    toggleSpeaker(
+                        ${device.id},
+                        this.checked
+                    )
+                "
+            >
+
+
+            <div class="info">
+
+                <div class="name">
+
+                    📱 ${escapeHtml(
+                        device.name
+                    )}
+
+                </div>
+
+
+                <div class="meta">
+
+                    ${escapeHtml(
+                        device.platform
+                    )}
+
+                    ·
+
+                    ${escapeHtml(
+                        device.browser
+                    )}
+
+                    ·
+
+                    ${escapeHtml(
+                        device.ip
+                    )}
+
+                </div>
+
+            </div>
+
+
+            <input
+                class="volume"
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value="${volume}"
+                onchange="
+                    changeVolume(
+                        ${device.id},
+                        this.value
+                    )
+                "
+            >
+
+
+            <div
+                class="volumeValue"
+                id="volume-${device.id}"
+            >
+                ${Math.round(
+                    volume * 100
+                )}%
+            </div>
+
+
+            <button
+                onclick="
+                    muteSpeaker(
+                        ${device.id}
+                    )
+                "
+            >
+                🔇
+            </button>
+
+        `;
+
+
+        container.appendChild(
+            speaker
+        );
+
+    }
+
+}
+
+
+/*
+ * ==========================================================
+ * HTML escaping
+ * ==========================================================
+ */
+
+function escapeHtml(
+    value
+) {
+
+    const div =
+        document.createElement(
+            "div"
+        );
+
+
+    div.textContent =
+        value;
+
+
+    return div.innerHTML;
+
+}
+
+
+/*
+ * ==========================================================
+ * Refresh
+ * ==========================================================
+ */
+
+loadDevices();
+
+
+setInterval(
+    loadDevices,
+    1000
+);
+
+</script>
+
+
+</body>
+
+</html>

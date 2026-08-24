@@ -2,6 +2,7 @@
 <html lang="en">
 
 <head>
+
     <meta charset="UTF-8">
 
     <meta
@@ -11,658 +12,266 @@
 
     <title>Wi-Fi Speaker</title>
 
+
     <style>
+
         * {
             box-sizing: border-box;
         }
 
+
         body {
+
             margin: 0;
+
             min-height: 100vh;
 
             display: flex;
+
             align-items: center;
+
             justify-content: center;
 
             background: #111;
+
             color: white;
 
             font-family: Arial, sans-serif;
+
         }
 
+
         .container {
+
             width: min(90%, 420px);
+
             padding: 30px;
 
             text-align: center;
 
             background: #1c1c1c;
+
             border-radius: 20px;
+
         }
+
 
         h1 {
+
             margin-top: 0;
+
         }
+
+
+        #device {
+
+            color: #aaa;
+
+            margin-bottom: 20px;
+
+        }
+
 
         #status {
+
             margin: 20px 0;
+
             color: #aaa;
+
         }
 
-        button {
+
+        input {
+
             width: 100%;
-            padding: 15px;
+
+            padding: 14px;
+
+            margin-bottom: 10px;
 
             border: none;
+
+            border-radius: 10px;
+
+            background: #292929;
+
+            color: white;
+
+            font-size: 16px;
+
+            outline: none;
+
+        }
+
+
+        input:focus {
+
+            outline: 2px solid #555;
+
+        }
+
+
+        button {
+
+            width: 100%;
+
+            padding: 15px;
+
+            margin-top: 8px;
+
+            border: none;
+
             border-radius: 12px;
 
             background: white;
+
             color: #111;
 
             font-size: 16px;
+
             font-weight: bold;
 
             cursor: pointer;
+
         }
+
 
         button:active {
+
             transform: scale(0.98);
+
         }
+
+
+        #connectButton {
+
+            margin-top: 20px;
+
+        }
+
+
+        #renameButton {
+
+            background: #292929;
+
+            color: white;
+
+        }
+
 
         #buffer {
+
             margin-top: 15px;
+
             color: #888;
+
             font-size: 14px;
+
         }
 
+
         #error {
+
             margin-top: 15px;
+
             color: #ff7777;
+
             font-size: 13px;
+
             word-break: break-word;
+
         }
+
+
+        #nameEditor {
+
+            display: none;
+
+        }
+
+
+        .hidden {
+
+            display: none !important;
+
+        }
+
     </style>
+
+    <link rel="stylesheet" href="/receiver/styles.css">
+
 </head>
+
 
 <body>
 
-<div class="container">
 
-    <h1>Wi-Fi Speaker</h1>
+<main class="container">
+
+    <div class="brand-mark" aria-hidden="true">◒</div>
+
+    <p class="eyebrow">Personal audio receiver</p>
+
+
+    <h1>
+        Wi-Fi Speaker
+    </h1>
+
+
+    <!-- Current speaker name -->
+
+    <div id="device">
+        Detecting device...
+    </div>
+
+
+    <!-- Rename panel -->
+
+    <div id="nameEditor">
+
+        <input
+            id="nameInput"
+            type="text"
+            maxlength="32"
+            placeholder="Speaker name"
+            autocomplete="off"
+        >
+
+        <button id="saveNameButton">
+            Save Name
+        </button>
+
+    </div>
+
+
+    <button id="renameButton">
+        Rename Speaker
+    </button>
+
 
     <div id="status">
         Disconnected
     </div>
 
+
     <button id="connectButton">
         Connect
     </button>
+
 
     <div id="buffer">
         Buffer: 0 ms
     </div>
 
+
     <div id="error"></div>
 
-</div>
 
+</main>
 
-<script>
 
-const SAMPLE_RATE = 48000;
-const CHANNELS = 2;
-
-
-/*
- * Initial buffer before playback begins.
- */
-const INITIAL_BUFFER_MS = 200;
-
-
-/*
- * Maximum browser-side buffer.
- */
-const MAX_BUFFER_MS = 600;
-
-
-/*
- * ---------------------------------------------------------
- * State
- * ---------------------------------------------------------
- */
-
-let socket = null;
-
-let audioContext = null;
-
-let processor = null;
-
-let audioQueue = [];
-
-let currentPacket = null;
-
-let currentPosition = 0;
-
-let queuedFrames = 0;
-
-let started = false;
-
-
-/*
- * ---------------------------------------------------------
- * UI
- * ---------------------------------------------------------
- */
-
-const status =
-    document.getElementById("status");
-
-const button =
-    document.getElementById("connectButton");
-
-const bufferDisplay =
-    document.getElementById("buffer");
-
-const errorDisplay =
-    document.getElementById("error");
-
-
-/*
- * ---------------------------------------------------------
- * Show errors
- * ---------------------------------------------------------
- */
-
-function showError(message) {
-
-    console.error(message);
-
-    errorDisplay.textContent =
-        message;
-}
-
-
-/*
- * ---------------------------------------------------------
- * Connect
- * ---------------------------------------------------------
- */
-
-button.addEventListener(
-    "click",
-    async () => {
-
-        errorDisplay.textContent = "";
-
-
-        /*
-         * Disconnect if already connected.
-         */
-
-        if (
-            socket &&
-            socket.readyState ===
-                WebSocket.OPEN
-        ) {
-
-            socket.close();
-
-            return;
-        }
-
-
-        try {
-
-            /*
-             * Create audio context after
-             * user interaction.
-             */
-
-            audioContext =
-                new (
-                    window.AudioContext ||
-                    window.webkitAudioContext
-                )({
-                    sampleRate: SAMPLE_RATE
-                });
-
-
-            await audioContext.resume();
-
-
-            console.log(
-                "Audio context:",
-                audioContext.sampleRate
-            );
-
-
-            /*
-             * -------------------------------------------------
-             * ScriptProcessor
-             * -------------------------------------------------
-             *
-             * 4096 frames gives the browser enough
-             * breathing room while keeping latency
-             * reasonably low.
-             */
-
-            processor =
-                audioContext.createScriptProcessor(
-                    4096,
-                    0,
-                    CHANNELS
-                );
-
-
-            processor.onaudioprocess =
-                processAudio;
-
-
-            processor.connect(
-                audioContext.destination
-            );
-
-
-            /*
-             * IMPORTANT:
-             * Change this to your laptop IP.
-             */
-
-            const laptopIP =
-                "192.168.43.131";
-
-
-            const websocketURL =
-                `ws://${laptopIP}:8000/audio`;
-
-
-            console.log(
-                "Connecting to:",
-                websocketURL
-            );
-
-
-            socket =
-                new WebSocket(
-                    websocketURL
-                );
-
-
-            socket.binaryType =
-                "arraybuffer";
-
-
-            /*
-             * -------------------------------------------------
-             * WebSocket connected
-             * -------------------------------------------------
-             */
-
-            socket.onopen = () => {
-
-                console.log(
-                    "WebSocket connected"
-                );
-
-                status.textContent =
-                    "Connected 🔊";
-
-                button.textContent =
-                    "Disconnect";
-
-                audioQueue = [];
-
-                currentPacket = null;
-
-                currentPosition = 0;
-
-                queuedFrames = 0;
-
-                started = false;
-
-                updateBufferDisplay();
-            };
-
-
-            /*
-             * -------------------------------------------------
-             * Audio packet received
-             * -------------------------------------------------
-             */
-
-            socket.onmessage = (event) => {
-
-                const pcm =
-                    new Int16Array(
-                        event.data
-                    );
-
-
-                const frameCount =
-                    pcm.length / CHANNELS;
-
-
-                const left =
-                    new Float32Array(
-                        frameCount
-                    );
-
-
-                const right =
-                    new Float32Array(
-                        frameCount
-                    );
-
-
-                /*
-                 * Int16 → Float32
-                 */
-
-                for (
-                    let i = 0;
-                    i < frameCount;
-                    i++
-                ) {
-
-                    left[i] =
-                        pcm[i * 2] / 32768;
-
-
-                    right[i] =
-                        pcm[i * 2 + 1] / 32768;
-                }
-
-
-                /*
-                 * Add packet to queue.
-                 */
-
-                audioQueue.push({
-                    left: left,
-                    right: right
-                });
-
-
-                queuedFrames +=
-                    frameCount;
-
-
-                /*
-                 * Prevent unlimited latency.
-                 */
-
-                const maximumFrames =
-                    SAMPLE_RATE *
-                    MAX_BUFFER_MS /
-                    1000;
-
-
-                while (
-                    queuedFrames >
-                    maximumFrames
-                ) {
-
-                    const removed =
-                        audioQueue.shift();
-
-
-                    if (!removed) {
-                        break;
-                    }
-
-
-                    queuedFrames -=
-                        removed.left.length;
-                }
-
-
-                /*
-                 * Don't start immediately.
-                 *
-                 * Wait until the buffer contains
-                 * enough audio.
-                 */
-
-                if (
-                    !started &&
-                    queuedFrames >=
-                        SAMPLE_RATE *
-                        INITIAL_BUFFER_MS /
-                        1000
-                ) {
-
-                    started = true;
-
-                    console.log(
-                        "Playback started"
-                    );
-                }
-
-
-                updateBufferDisplay();
-            };
-
-
-            /*
-             * -------------------------------------------------
-             * WebSocket error
-             * -------------------------------------------------
-             */
-
-            socket.onerror = (event) => {
-
-                console.error(
-                    "WebSocket error:",
-                    event
-                );
-
-                status.textContent =
-                    "Connection error";
-
-                showError(
-                    "Could not connect to laptop."
-                );
-            };
-
-
-            /*
-             * -------------------------------------------------
-             * WebSocket closed
-             * -------------------------------------------------
-             */
-
-            socket.onclose = () => {
-
-                console.log(
-                    "WebSocket closed"
-                );
-
-                status.textContent =
-                    "Disconnected";
-
-                button.textContent =
-                    "Connect";
-
-                audioQueue = [];
-
-                currentPacket = null;
-
-                currentPosition = 0;
-
-                queuedFrames = 0;
-
-                started = false;
-
-                updateBufferDisplay();
-            };
-
-        } catch (error) {
-
-            console.error(error);
-
-            status.textContent =
-                "Audio initialization failed";
-
-            showError(
-                error.message ||
-                String(error)
-            );
-        }
-
-    }
-);
-
-
-/*
- * ---------------------------------------------------------
- * Audio processing callback
- * ---------------------------------------------------------
- *
- * This function is called continuously by
- * the browser's audio engine.
- */
-
-function processAudio(event) {
-
-    const outputBuffer =
-        event.outputBuffer;
-
-
-    const leftOutput =
-        outputBuffer.getChannelData(0);
-
-
-    const rightOutput =
-        outputBuffer.numberOfChannels > 1
-            ? outputBuffer.getChannelData(1)
-            : null;
-
-
-    /*
-     * Fill the entire output buffer.
-     */
-
-    for (
-        let i = 0;
-        i < leftOutput.length;
-        i++
-    ) {
-
-        /*
-         * If playback hasn't started,
-         * output silence.
-         */
-
-        if (!started) {
-
-            leftOutput[i] = 0;
-
-            if (rightOutput) {
-                rightOutput[i] = 0;
-            }
-
-            continue;
-        }
-
-
-        /*
-         * Get a new packet when the
-         * current packet is exhausted.
-         */
-
-        if (
-            currentPacket === null ||
-            currentPosition >=
-                currentPacket.left.length
-        ) {
-
-            if (
-                audioQueue.length > 0
-            ) {
-
-                currentPacket =
-                    audioQueue.shift();
-
-                currentPosition = 0;
-
-            } else {
-
-                /*
-                 * Buffer underrun.
-                 *
-                 * Output silence rather than
-                 * producing random samples.
-                 */
-
-                leftOutput[i] = 0;
-
-                if (rightOutput) {
-                    rightOutput[i] = 0;
-                }
-
-                continue;
-            }
-        }
-
-
-        /*
-         * Output left channel.
-         */
-
-        leftOutput[i] =
-            currentPacket.left[
-                currentPosition
-            ];
-
-
-        /*
-         * Output right channel.
-         */
-
-        if (rightOutput) {
-
-            rightOutput[i] =
-                currentPacket.right[
-                    currentPosition
-                ];
-        }
-
-
-        currentPosition++;
-
-        queuedFrames--;
-
-    }
-
-
-    updateBufferDisplay();
-}
-
-
-/*
- * ---------------------------------------------------------
- * Buffer display
- * ---------------------------------------------------------
- */
-
-function updateBufferDisplay() {
-
-    const milliseconds =
-        Math.max(
-            0,
-            Math.round(
-                queuedFrames /
-                SAMPLE_RATE *
-                1000
-            )
-        );
-
-
-    bufferDisplay.textContent =
-        `Buffer: ${milliseconds} ms`;
-}
-
-</script>
+<script src="/receiver/script.js"></script>
 
 </body>
+
 </html>
