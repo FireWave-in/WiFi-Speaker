@@ -40,6 +40,11 @@ app.mount(
     StaticFiles(directory=BASE_DIR / "receiver"),
     name="receiver"
 )
+app.mount(
+    "/control/assets",
+    StaticFiles(directory=BASE_DIR / "control"),
+    name="control-assets"
+)
 
 # ============================================================
 # Global state

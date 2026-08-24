@@ -212,13 +212,21 @@
 
     </style>
 
+    <link rel="stylesheet" href="/control/assets/styles.css">
+
 </head>
 
 
 <body>
 
 
-<div class="container">
+<main class="container">
+
+<header>
+    <div>
+        <div class="brand-mark" aria-hidden="true">◒</div>
+
+        <p class="eyebrow">Workspace audio</p>
 
 
     <h1>
@@ -233,9 +241,17 @@
         </span>
 
     </div>
+    </div>
 
+    <div class="connection-state">Live control link</div>
+
+</header>
 
     <div class="toolbar">
+
+        <span class="eyebrow">Connected speakers</span>
+
+        <div class="toolbar-actions">
 
         <button
             class="primary"
@@ -251,13 +267,15 @@
             Deselect All
         </button>
 
+        </div>
+
     </div>
 
 
     <div id="speakers"></div>
 
 
-</div>
+</main>
 
 
 <script>
