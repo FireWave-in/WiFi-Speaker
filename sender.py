@@ -8,6 +8,7 @@ import soundcard as sc
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 import uvicorn
 
@@ -34,7 +35,11 @@ RECEIVER_FILE = (
 CONTROL_FILE = (
     BASE_DIR / "control" / "index.html"
 )
-
+app.mount(
+    "/receiver",
+    StaticFiles(directory=BASE_DIR / "receiver"),
+    name="receiver"
+)
 
 # ============================================================
 # Global state
