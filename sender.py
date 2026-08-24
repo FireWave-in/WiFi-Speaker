@@ -1,11 +1,12 @@
 import asyncio
+import json
 import threading
 from pathlib import Path
 
 import numpy as np
 import soundcard as sc
 
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 
 import uvicorn
@@ -21,11 +22,18 @@ app = FastAPI()
 SAMPLE_RATE = 48000
 CHANNELS = 2
 
-# 40 ms per packet
+# 40 ms
 BLOCK_SIZE = 1920
 
 BASE_DIR = Path(__file__).resolve().parent
-RECEIVER_FILE = BASE_DIR / "receiver" / "index.html"
+
+RECEIVER_FILE = (
+    BASE_DIR / "receiver" / "index.html"
+)
+
+CONTROL_FILE = (
+    BASE_DIR / "control" / "index.html"
+)
 
 
 # ============================================================
@@ -34,7 +42,6 @@ RECEIVER_FILE = BASE_DIR / "receiver" / "index.html"
 
 clients = set()
 
-# WebSocket -> device information
 devices = {}
 
 audio_queue = None
@@ -42,6 +49,30 @@ audio_queue = None
 capture_thread = None
 
 stop_capture = threading.Event()
+
+
+# ============================================================
+# Device helpers
+# ============================================================
+
+def device_info(websocket):
+
+    device = devices.get(websocket)
+
+    if device is None:
+        return None
+
+    return device
+
+
+def selected_clients():
+
+    return [
+        client
+        for client in clients
+        if client in devices
+        and devices[client]["selected"]
+    ]
 
 
 # ============================================================
@@ -57,7 +88,9 @@ def get_loopback_microphone():
             "No default speaker found."
         )
 
-    print(f"Using speaker: {speaker.name}")
+    print(
+        f"Using speaker: {speaker.name}"
+    )
 
     microphone = sc.get_microphone(
         id=str(speaker.id),
@@ -80,9 +113,13 @@ def capture_audio(loop):
 
     try:
 
-        microphone = get_loopback_microphone()
+        microphone = (
+            get_loopback_microphone()
+        )
 
-        print("Starting system audio capture...")
+        print(
+            "Starting system audio capture..."
+        )
 
         with microphone.recorder(
             samplerate=SAMPLE_RATE,
@@ -116,6 +153,7 @@ def capture_audio(loop):
                     )
 
                 except RuntimeError:
+
                     break
 
     except Exception as e:
@@ -129,7 +167,7 @@ def capture_audio(loop):
 # Audio queue
 # ============================================================
 
-async def put_audio(data: bytes):
+async def put_audio(data):
 
     if audio_queue is None:
         return
@@ -137,8 +175,11 @@ async def put_audio(data: bytes):
     if audio_queue.full():
 
         try:
+
             audio_queue.get_nowait()
+
         except asyncio.QueueEmpty:
+
             pass
 
     try:
@@ -146,6 +187,7 @@ async def put_audio(data: bytes):
         audio_queue.put_nowait(data)
 
     except asyncio.QueueFull:
+
         pass
 
 
@@ -159,16 +201,20 @@ async def broadcast_audio():
 
         data = await audio_queue.get()
 
-        if not clients:
+        targets = selected_clients()
+
+        if not targets:
             continue
 
         dead_clients = set()
 
-        for client in list(clients):
+        for client in targets:
 
             try:
 
-                await client.send_bytes(data)
+                await client.send_bytes(
+                    data
+                )
 
             except Exception:
 
@@ -181,7 +227,7 @@ async def broadcast_audio():
 
 
 # ============================================================
-# WebSocket
+# Receiver WebSocket
 # ============================================================
 
 @app.websocket("/audio")
@@ -203,54 +249,76 @@ async def audio_socket(websocket: WebSocket):
 
             message = await websocket.receive()
 
-            # Device identification message
             if message.get("text"):
 
                 try:
-
-                    import json
 
                     data = json.loads(
                         message["text"]
                     )
 
-                    if data.get("type") == "identify":
+                    if (
+                        data.get("type")
+                        == "identify"
+                    ):
+
+                        name = data.get(
+                            "name",
+                            "Unknown Speaker"
+                        )
+
+                        platform = data.get(
+                            "platform",
+                            "Unknown"
+                        )
+
+                        browser = data.get(
+                            "browser",
+                            "Unknown"
+                        )
 
                         devices[websocket] = {
-                            "name": data.get(
-                                "name",
-                                "Unknown Device"
-                            ),
-                            "platform": data.get(
-                                "platform",
-                                "Unknown"
-                            ),
-                            "browser": data.get(
-                                "browser",
-                                "Unknown"
-                            ),
-                            "ip": address.host
-                            if address else "Unknown"
+
+                            "name": name,
+
+                            "platform":
+                                platform,
+
+                            "browser":
+                                browser,
+
+                            "ip":
+                                address.host
+                                if address
+                                else "Unknown",
+
+                            "selected":
+                                True,
+
+                            "volume":
+                                1.0
                         }
 
+                        print()
                         print(
-                            f"  Name     : "
-                            f"{devices[websocket]['name']}"
+                            "Speaker identified:"
                         )
 
                         print(
-                            f"  Platform : "
-                            f"{devices[websocket]['platform']}"
+                            f"  Name     : {name}"
                         )
 
                         print(
-                            f"  Browser  : "
-                            f"{devices[websocket]['browser']}"
+                            f"  Platform : {platform}"
+                        )
+
+                        print(
+                            f"  Browser  : {browser}"
                         )
 
                         print(
                             f"  IP       : "
-                            f"{devices[websocket]['ip']}"
+                            f"{address.host}"
                         )
 
                         print()
@@ -258,10 +326,16 @@ async def audio_socket(websocket: WebSocket):
                 except Exception as e:
 
                     print(
-                        f"Device identification error: {e}"
+                        "Identification error:",
+                        e
                     )
 
+    except WebSocketDisconnect:
+
+        pass
+
     except Exception:
+
         pass
 
     finally:
@@ -276,30 +350,181 @@ async def audio_socket(websocket: WebSocket):
         if device:
 
             print(
-                f"Device disconnected: "
+                f"Speaker disconnected: "
                 f"{device['name']}"
             )
 
         else:
 
             print(
-                f"Device disconnected: {address}"
+                f"Device disconnected: "
+                f"{address}"
             )
 
 
 # ============================================================
-# Receiver webpage
+# Control WebSocket
+# ============================================================
+
+@app.websocket("/control/ws")
+async def control_socket(websocket: WebSocket):
+
+    await websocket.accept()
+
+    print(
+        "Control panel connected."
+    )
+
+    try:
+
+        while True:
+
+            message = await websocket.receive_text()
+
+            data = json.loads(message)
+
+            command = data.get("command")
+
+            # --------------------------------------------
+            # Select device
+            # --------------------------------------------
+
+            if command == "select":
+
+                index = data.get("index")
+
+                for client, device in devices.items():
+
+                    if id(client) == index:
+
+                        device["selected"] = True
+
+            # --------------------------------------------
+            # Deselect device
+            # --------------------------------------------
+
+            elif command == "deselect":
+
+                index = data.get("index")
+
+                for client, device in devices.items():
+
+                    if id(client) == index:
+
+                        device["selected"] = False
+
+            # --------------------------------------------
+            # Select all
+            # --------------------------------------------
+
+            elif command == "select_all":
+
+                for device in devices.values():
+
+                    device["selected"] = True
+
+            # --------------------------------------------
+            # Deselect all
+            # --------------------------------------------
+
+            elif command == "deselect_all":
+
+                for device in devices.values():
+
+                    device["selected"] = False
+
+            # --------------------------------------------
+            # Volume
+            # --------------------------------------------
+
+            elif command == "volume":
+
+                index = data.get("index")
+
+                volume = float(
+                    data.get(
+                        "volume",
+                        1.0
+                    )
+                )
+
+                volume = max(
+                    0.0,
+                    min(1.0, volume)
+                )
+
+                for client, device in devices.items():
+
+                    if id(client) == index:
+
+                        device["volume"] = volume
+
+                        try:
+
+                            await client.send_text(
+                                json.dumps({
+                                    "type":
+                                        "volume",
+
+                                    "volume":
+                                        volume
+                                })
+                            )
+
+                        except Exception:
+
+                            pass
+
+            # --------------------------------------------
+            # Mute
+            # --------------------------------------------
+
+            elif command == "mute":
+
+                index = data.get("index")
+
+                for client, device in devices.items():
+
+                    if id(client) == index:
+
+                        device["muted"] = not device.get(
+                            "muted",
+                            False
+                        )
+
+                        try:
+
+                            await client.send_text(
+                                json.dumps({
+                                    "type":
+                                        "mute",
+
+                                    "muted":
+                                        device["muted"]
+                                })
+                            )
+
+                        except Exception:
+
+                            pass
+
+    except Exception:
+
+        pass
+
+    finally:
+
+        print(
+            "Control panel disconnected."
+        )
+
+
+# ============================================================
+# Receiver page
 # ============================================================
 
 @app.get("/")
-async def index():
-
-    if not RECEIVER_FILE.exists():
-
-        return {
-            "error": "receiver/index.html not found",
-            "expected_path": str(RECEIVER_FILE)
-        }
+async def receiver():
 
     return FileResponse(
         RECEIVER_FILE,
@@ -308,7 +533,20 @@ async def index():
 
 
 # ============================================================
-# Device list
+# Control panel
+# ============================================================
+
+@app.get("/control")
+async def control():
+
+    return FileResponse(
+        CONTROL_FILE,
+        media_type="text/html"
+    )
+
+
+# ============================================================
+# Devices API
 # ============================================================
 
 @app.get("/devices")
@@ -316,9 +554,16 @@ async def get_devices():
 
     result = []
 
-    for device in devices.values():
+    for client, device in devices.items():
 
-        result.append(device)
+        item = dict(device)
+
+        # Temporary identifier used
+        # by the control panel.
+
+        item["id"] = id(client)
+
+        result.append(item)
 
     return {
         "count": len(result),
@@ -327,25 +572,44 @@ async def get_devices():
 
 
 # ============================================================
-# Server status
+# Status
 # ============================================================
 
 @app.get("/status")
 async def status():
 
     return {
-        "name": "Wi-Fi Speaker",
-        "status": "running",
-        "connected_devices": len(clients),
-        "devices": list(
-            devices.values()
-        ),
+
+        "name":
+            "Wi-Fi Speaker",
+
+        "status":
+            "running",
+
+        "connected_devices":
+            len(clients),
+
+        "selected_devices":
+            len(
+                selected_clients()
+            ),
+
         "audio": {
-            "sample_rate": SAMPLE_RATE,
-            "channels": CHANNELS,
-            "block_size": BLOCK_SIZE,
-            "packet_duration_ms": 40,
-            "format": "PCM S16LE"
+
+            "sample_rate":
+                SAMPLE_RATE,
+
+            "channels":
+                CHANNELS,
+
+            "block_size":
+                BLOCK_SIZE,
+
+            "packet_duration_ms":
+                40,
+
+            "format":
+                "PCM S16LE"
         }
     }
 
@@ -414,31 +678,30 @@ async def shutdown():
 if __name__ == "__main__":
 
     print()
-    print("=" * 55)
+    print("=" * 60)
     print("                 Wi-Fi Speaker")
-    print("=" * 55)
+    print("=" * 60)
     print()
 
     print(
-        "Audio format : 48 kHz / Stereo / 16-bit PCM"
+        "Audio      : 48 kHz / Stereo / 16-bit"
     )
 
     print(
-        "Packet size  : 40 ms"
+        "Packet     : 40 ms"
     )
 
     print(
-        "Transport    : WebSocket"
+        "Transport  : WebSocket"
     )
 
     print()
-
     print(
-        "Starting server..."
+        "Receiver   : http://<laptop-ip>:8000"
     )
 
     print(
-        "Listening on all network interfaces."
+        "Control    : http://<laptop-ip>:8000/control"
     )
 
     print()
